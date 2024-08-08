@@ -19,12 +19,14 @@ uchar buffer[BLOCKSIZE];
 uchar left[256];
 uchar right[256];
 uchar count[256][256];  // pair counts (up to 255)   
-int size;
+int size, used;  // per block
 
 // read block from file into pair count
 // return if done reading file
 bool readblock(FILE* infile)
 {
+    printf("*** READ BLOCK ***\n");
+
     // clear count and reset pair table
     memset(count, 0, 256 * 256);
 
@@ -35,7 +37,7 @@ bool readblock(FILE* infile)
 
 
     size = 0; // block size
-    int used = 0;
+    used = 0;
 
     int c;
 
@@ -52,13 +54,13 @@ bool readblock(FILE* infile)
                 ++count[lastc][c];
         }
 
-        // increase used count if new, mark as used
+        // increase used count if new, mark in pair table as used
         if (right[c] == 0) {
             right[c] = 1;
             ++used;
         }
 
-        buffer[size] = c;  // write char at size
+        buffer[size] = c;  // write char at index `size`
 
 
         ++size;
@@ -80,13 +82,14 @@ bool readblock(FILE* infile)
         }
     }
     
-
+    /*
     printf("\npair table:\n");
     for (int i=0x60; i<0x68; ++i) {
         printf("%02x: %02x %02x\n", i, left[i], right[i]);
     }
+    */
 
-    printf("\n\n");
+    printf("\n");
 
 
     return (c == EOF);
@@ -94,17 +97,15 @@ bool readblock(FILE* infile)
 
 // for block, write pair and packed data
 void compress() {
-    // while compression possible
 
-    int unused = 0;
-    // count unused from right array
-    for (int i=0; i<256; ++i) {
-        if (right[i] == 0) ++unused;
-    }
+    printf("*** COMPRESS BLOCK ***\n");
 
+    int unused = 256 - used;
+
+    // while compression possible:
     // pick pairs until no unused bytes or no good pairs
     while (unused > 0) {
-
+        printf("NEW COMPRESSION PASS\n");
     
         uchar bestcount = 0;
         uchar bestleft, bestright;
@@ -117,14 +118,13 @@ void compress() {
                 }
             }
         }
-        
+
+
         printf("best pair %02x%02x:%d\n", bestleft, bestright, bestcount);
 
         if (bestcount < MINPAIRS) 
             break;
 
-
-            
 
         // find unused byte to use
         int y = 0;
@@ -183,7 +183,7 @@ void compress() {
 
         --unused;
 
-        printf("new buffer: ");
+        printf("new buffer(%d): ", size);
         for (int i=0; i<size; ++i) {
             printf("%02x ", buffer[i] );
         }
@@ -203,13 +203,19 @@ void compress() {
 
 
         
-        printf("\npair table:\n");
+        printf("\nused pair table:\n");
+
         for (int i=0; i<256; ++i) {
-            printf("%02x: %02x %02x\n", i, left[i], right[i]);
+            if (i != left[i]) 
+                printf("%02x:%02x%02x\n", i, left[i], right[i]);
         }
 
-        break; // temp
+        printf("\n");
+       
+       
     }
+
+    printf("\n");
 }
 
 
