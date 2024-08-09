@@ -1,11 +1,9 @@
 
-
-
-
 #include <stdio.h>
 #include <stdbool.h>
 #include <limits.h>
 #include <string.h>
+#include <assert.h>
 
 #define BLOCKSIZE 5000 // Maximum block size
 #define MAXCHARS   200 // Charset per block (leave some unused)
@@ -78,7 +76,7 @@ bool readblock(FILE* infile)
     for (int i=0; i<256; ++i) {
         for (int j=0; j<256; ++j) {
             if (count[i][j]) 
-                printf("%02x%02x:%02x\n", i, j, count[i][j]);
+                printf("%02x%02x:%02x\t", i, j, count[i][j]);
         }
     }
     
@@ -100,15 +98,16 @@ void compress() {
 
     printf("*** COMPRESS BLOCK ***\n");
 
-    int unused = 256 - used;
+    int pass = 1;
 
     // while compression possible:
     // pick pairs until no unused bytes or no good pairs
-    while (unused > 0) {
-        printf("NEW COMPRESSION PASS\n");
+    while (1) {
+        printf("COMPRESSION PASS %d\n", pass);
+
     
         uchar bestcount = 0;
-        uchar bestleft, bestright;
+        uchar bestleft=0, bestright=0;
         for (int i=0; i<256; ++i) {
             for (int j=0; j<256; ++j) {
                 // record best pair and count
@@ -127,13 +126,13 @@ void compress() {
 
 
         // find unused byte to use
-        int y = 0;
-        for (int i=0; i<256; ++i) {
-            if (i == left[i] && right[i] == 0) {
-                y = i;
+        int y;
+        for (y=255; y>=0;--y)
+            if (left[y] == y && right[y] == 0) 
                 break;
-            }
-        }
+        
+
+        if (y < 0) break;  // no more unused 
 
         printf("unused byte: %02x\n", y);
         
@@ -181,7 +180,7 @@ void compress() {
             }
         }
 
-        --unused;
+        ++pass;
 
         printf("new buffer(%d): ", size);
         for (int i=0; i<size; ++i) {
@@ -193,7 +192,7 @@ void compress() {
         for (int i=0; i<256; ++i) {
             for (int j=0; j<256; ++j)
                 if (count[i][j]) 
-                    printf("%02x%02x:%d\n", i, j, count[i][j]);
+                    printf("%02x%02x:%d\t", i, j, count[i][j]);
         }       
 
 
@@ -218,6 +217,74 @@ void compress() {
     printf("\n");
 }
 
+// write pair table and compressed data
+void writeblock(FILE* outfile) {
+    printf("*** WRITE BLOCK ***\n");
+
+    int c = 0;
+    signed char count = 0;
+
+    while (c < 256) {
+        printf("c: %02x\n",c);
+    
+        count = 0;
+        // run of non-pairs
+        if (c == left[c]) {
+            while (c == left[c] && c < 256 && count > -128) {
+                ++c;
+                --count;
+                
+            }
+            // output count as negative byte
+            assert(count < 0);
+            putc(count, outfile);
+            printf("count:%d\n", count);
+
+            // output single pair if not end of table
+            if (c < 256) {
+                putc(left[c], outfile);
+                putc(right[c], outfile); 
+                printf("single pair %02x%02x\n", left[c], right[c]);
+                ++c;
+            }
+            
+        } else {
+            // run of pairs
+            int b = c; // index of start of run
+            while (c != left[c] && c < 256 && count < 127) {
+                ++c;
+                ++count;
+            }
+
+            // output count
+            assert(count > 0);
+            putc(count, outfile);
+            printf("count:%d\n", count);
+
+            for (; b < c; ++b) {
+                putc(left[b], outfile);
+                putc(right[b], outfile);
+                printf("%02x%02x\n", left[b], right[b]);
+            }
+
+            
+        }
+    }
+
+    // write compressed buffer size
+    assert(size <= 0xFFFF);
+    putc(size >> 8, outfile);
+    putc(size & 0xFF, outfile);
+
+    printf("compressed size: %d (%04x)\n", size, size);
+    
+
+    // write compressed buffer
+    fwrite(buffer, 1, size, outfile);
+    printf("write buffer\n");
+    
+}
+
 
 
 int main(int argc, char* argv[]) {
@@ -228,20 +295,12 @@ int main(int argc, char* argv[]) {
     }
 
     // TODO: file i/o checking
-    FILE* infile = fopen(argv[1], "rb");    
+    // TODO: loop through blocks
+    FILE* infile = fopen(argv[1], "r");
+    FILE* outfile = fopen(argv[2], "w");    
     readblock(infile);
     compress();
+    writeblock(outfile);
 }
-
-
-
-
-
-
-
-
-
-
-
 
 
