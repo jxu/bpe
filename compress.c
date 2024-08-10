@@ -41,9 +41,11 @@ bool readblock(FILE* infile)
 
     // C I/O, get one char at a time
     // stopping at EOF, BLOCKSIZE limit, or MAXCHARS limit
-    while ((c = getc(infile)) != EOF 
-           && size < BLOCKSIZE && used < MAXCHARS) 
-    {
+    while (size < BLOCKSIZE && used < MAXCHARS) 
+    {   
+        // only read now instead of in condition
+        c = getc(infile);
+        if (c == EOF) break;
 
         // count pair
         if (size > 0) 

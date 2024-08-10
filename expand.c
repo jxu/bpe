@@ -41,13 +41,17 @@ int expand(FILE* infile, FILE* outfile)
         if (count < 0)
         {
             b += -count;
-            // doesn't handle if file unexpectedly ends
-            left[b] = getc(infile);
-            right[b] = getc(infile);
+
 
             // if not end table, read single pair
             if (b < 256)
             {
+
+                // doesn't handle if file unexpectedly ends
+                left[b] = getc(infile);
+                right[b] = getc(infile);
+
+            
                 printf("Read single pair %02x%02x\n", left[b], right[b]);
                 ++b; // increment index to next pair
             }
@@ -82,7 +86,7 @@ int expand(FILE* infile, FILE* outfile)
 
     int size = (usize << 8) + lsize;
 
-    printf("size: %d\n", size);
+    printf("size: %02x%02x(%d)\n", usize, lsize, size);
 
     // write output, pushing pairs to stack
     i = 0; 
