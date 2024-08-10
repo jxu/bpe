@@ -341,6 +341,9 @@ int main(int argc, char* argv[])
         compress();
         writeblock(outfile);
     } while (notdone);
+    
+    fclose(infile);
+    fclose(outfile);
 }
 
 
