@@ -90,7 +90,7 @@ int expand(FILE* infile, FILE* outfile)
 
     // write output, pushing pairs to stack
     i = 0; 
-    while (i < size)
+    while (i < size || sp) // more to read or stack non-empty
     {
         if (sp == 0) // stack empty
         {

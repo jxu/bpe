@@ -2,3 +2,4 @@ compress
 expand
 *.bpe
 *.new
+*.log
