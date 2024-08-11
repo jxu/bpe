@@ -2,7 +2,7 @@
 
    pseudocode:
 
-   While not end of file
+    While not end of file
       Read pair table from input
       While more data in block
          If stack empty, read byte from input
@@ -10,8 +10,8 @@
          If byte in table, push pair on stack
          Else write byte to output
       End while
-   
-   End while
+
+    End while
 */
 
 

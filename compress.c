@@ -30,9 +30,8 @@ typedef unsigned char uchar;
 
 /* file-wide globals per-block */
 uchar buffer[BLOCKSIZE];
-uchar  left[256];
-uchar right[256];
-uchar count[256][256];  /* pair counts */   
+uchar left[256], right[256]; /* pair table */
+uchar count[256][256];       /* pair counts */   
 int size;  
 
 /* read block from file into pair count */
@@ -44,7 +43,7 @@ int readblock(FILE* infile)
 
     printf("*** READ BLOCK ***\n");
 
-    /* reset pair table */
+    /* reset counts and pair table */
     for (i = 0; i < 256; ++i) 
     {
         for (j = 0; j < 256; ++j) 
@@ -79,8 +78,7 @@ int readblock(FILE* infile)
             ++used;
         }
 
-        buffer[size] = c;  /* write char at index `size` */
-        ++size;
+        buffer[size++] = c;  /* push c to buffer */
     }
 
 
@@ -92,13 +90,9 @@ int readblock(FILE* infile)
 
     printf("\n(non-zero) count table:\n");
     for (i=0; i<256; ++i) 
-    {
         for (j=0; j<256; ++j) 
-        {
             if (count[i][j]) 
                 printf("%02x%02x:%02x\t", i, j, count[i][j]);
-        }
-    }
     
     printf("\n");
 
@@ -109,7 +103,6 @@ int readblock(FILE* infile)
 void compress() 
 {
     int pass, i, j, y;
-
 
     printf("*** COMPRESS BLOCK ***\n");
 
@@ -147,7 +140,6 @@ void compress()
             if (left[y] == y && right[y] == 0) 
                 break;
         
-
         if (y < 0) break;  /* no more unused */
 
         printf("unused byte: %02x\n", y);
@@ -160,15 +152,13 @@ void compress()
             if (r+1 < size && 
                 buffer[r] == bestleft && buffer[r+1] == bestright) 
             {
-                buffer[w] = y; /* write new byte */
-
-                ++w;
+                buffer[w++] = y; /* write new byte */
                 r += 2; /* move read index past pair */
             } 
             else 
             {
-                buffer[w] = buffer[r];
-                ++w; ++r;
+                /* copy buffer[r] to buffer[w], increment indexes */
+                buffer[w++] = buffer[r++]; 
             }
         }
 
@@ -189,18 +179,15 @@ void compress()
                 uchar d = buffer[i+1];
 
                 if (count[c][d] < 255) 
-                {
                     ++count[c][d];
-                }
             }
         }
 
 
         printf("new buffer(%d): ", size);
         for (i=0; i<size; ++i) 
-        {
             printf("%02x ", buffer[i] );
-        }
+    
         printf("\n");
 
 
@@ -327,12 +314,13 @@ int main(int argc, char* argv[])
         return -1;
     }
 
-    do 
+    notdone = 1;
+    while (notdone)
     {
         notdone = readblock(infile);
         compress();
         writeblock(outfile);
-    } while (notdone);
+    }
     
     fclose(infile);
     fclose(outfile);
