@@ -25,6 +25,7 @@
 #define BLOCKSIZE 5000 /* Maximum block size */
 #define MAXCHARS   200 /* Charset per block (leave some unused) */
 #define MINPAIRS     3 /* Min pairs needed for compress */
+#define DEBUG        0 /* debug flag */
 
 typedef unsigned char uchar;
 
@@ -41,7 +42,7 @@ int readblock(FILE* infile)
     int i, j, c;
     int used = 0;
 
-    printf("*** READ BLOCK ***\n");
+    if (DEBUG) printf("*** READ BLOCK ***\n");
 
     /* reset counts and pair table */
     for (i = 0; i < 256; ++i) 
@@ -81,21 +82,23 @@ int readblock(FILE* infile)
         buffer[size++] = c;  /* push c to buffer */
     }
 
+    if (DEBUG)
+    {
+        printf("size: %d used: %d\n", size, used);
 
-    printf("size: %d used: %d\n", size, used);
+        printf("buffer:\n");
+        for (i=0; i<size; ++i)
+            printf("%02x ", buffer[i]);
 
-    printf("buffer:\n");
-    for (i=0; i<size; ++i)
-        printf("%02x ", buffer[i]);
-
-    printf("\n(non-zero) count table:\n");
-    for (i=0; i<256; ++i) 
-        for (j=0; j<256; ++j) 
-            if (count[i][j]) 
-                printf("%02x%02x:%02x\t", i, j, count[i][j]);
+        printf("\n(non-zero) count table:\n");
+        for (i=0; i<256; ++i) 
+            for (j=0; j<256; ++j) 
+                if (count[i][j]) 
+                    printf("%02x%02x:%02x\t", i, j, count[i][j]);
+        
+        printf("\n");
+    }
     
-    printf("\n");
-
     return (c != EOF);
 }
 
@@ -104,7 +107,7 @@ void compress()
 {
     int pass, i, j, y;
 
-    printf("*** COMPRESS BLOCK ***\n");
+    if (DEBUG) printf("*** COMPRESS BLOCK ***\n");
 
     /* while compression possible:
        pick pairs until no unused bytes or no good pairs */
@@ -114,7 +117,7 @@ void compress()
         uchar bestcount = 0;
         uchar bestleft = 0, bestright = 0;
 
-        printf("COMPRESSION PASS %d\n", pass);
+        if (DEBUG) printf("COMPRESSION PASS %d\n", pass);
         
         for (i=0; i<256; ++i) 
         {
@@ -129,7 +132,8 @@ void compress()
             }
         }
 
-        printf("best pair %02x%02x:%d\n", bestleft, bestright, bestcount);
+        if (DEBUG)
+            printf("best pair %02x%02x:%d\n", bestleft, bestright, bestcount);
 
         if (bestcount < MINPAIRS) 
             break;
@@ -142,7 +146,7 @@ void compress()
         
         if (y < 0) break;  /* no more unused */
 
-        printf("unused byte: %02x\n", y);
+        if (DEBUG) printf("unused byte: %02x\n", y);
         
          
         /* replace pairs with unused byte in-place in buffer */
@@ -183,30 +187,30 @@ void compress()
             }
         }
 
-
-        printf("new buffer(%d): ", size);
-        for (i=0; i<size; ++i) 
-            printf("%02x ", buffer[i] );
-    
-        printf("\n");
-
-
         /* add  pair in pair table */
         left[y] = bestleft;
         right[y] = bestright;
-        
-        printf("used pair table:\n");
 
-        for (i=0; i<256; ++i) 
-        {
-            if (i != left[i]) 
-                printf("%02x:%02x%02x\n", i, left[i], right[i]);
+        if (DEBUG)
+        {   
+
+            printf("new buffer(%d): ", size);
+            for (i=0; i<size; ++i) 
+                printf("%02x ", buffer[i]);
+            printf("\n");
+            
+            printf("used pair table:\n");
+
+            for (i=0; i<256; ++i) 
+            {
+                if (i != left[i]) 
+                    printf("%02x:%02x%02x\n", i, left[i], right[i]);
+            }
+            printf("\n");
         }
-
-        printf("\n");
     }
 
-    printf("\n");
+    if (DEBUG) printf("\n");
 }
 
 /* write pair table and compressed data */
@@ -215,11 +219,11 @@ void writeblock(FILE* outfile)
     int c = 0;
     signed char count = 0;
 
-    printf("*** WRITE BLOCK ***\n");
+    if (DEBUG) printf("*** WRITE BLOCK ***\n");
 
     while (c < 256) 
     {
-        printf("c: %02x\n",c);
+        if (DEBUG) printf("c: %02x\t",c);
     
         count = 0;
         /* run of non-pairs */
@@ -233,14 +237,14 @@ void writeblock(FILE* outfile)
             /* output count as negative byte */
             assert(count < 0);
             putc(count, outfile);
-            printf("count:%d\n", count);
+            if (DEBUG) printf("count:%d\t", count);
 
             /* output single pair if not end of table */
             if (c < 256) 
             {
                 putc(left[c], outfile);
                 putc(right[c], outfile); 
-                printf("single pair %02x%02x\n", left[c], right[c]);
+                if (DEBUG) printf("single pair %02x%02x\n", left[c], right[c]);
                 ++c;
             }
             
@@ -258,13 +262,13 @@ void writeblock(FILE* outfile)
             /* output count */
             assert(count > 0);
             putc(count, outfile);
-            printf("count:%d\n", count);
+            if (DEBUG) printf("count:%d\n", count);
 
             for (; b < c; ++b) 
             {
                 putc(left[b], outfile);
                 putc(right[b], outfile);
-                printf("%02x%02x\n", left[b], right[b]);
+                if (DEBUG) printf("%02x%02x\n", left[b], right[b]);
             }
 
             
@@ -276,12 +280,12 @@ void writeblock(FILE* outfile)
     putc(size >> 8, outfile);
     putc(size & 0xFF, outfile);
 
-    printf("compressed size: %d (%04x)\n", size, size);
+    if (DEBUG) printf("compressed size: %d (%04x)\n", size, size);
     
 
     /* write compressed buffer */
     fwrite(buffer, 1, size, outfile);
-    printf("write buffer\n");
+    if (DEBUG) printf("write buffer(%d)\n", size);
     
 }
 
@@ -291,7 +295,6 @@ int main(int argc, char* argv[])
 {
     int notdone;
     FILE* infile, * outfile;
-
 
     if (argc != 3) 
     {
@@ -327,5 +330,3 @@ int main(int argc, char* argv[])
 
     return 0;
 }
-
-
