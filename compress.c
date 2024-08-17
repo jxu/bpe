@@ -33,7 +33,7 @@ typedef unsigned char uchar;
 uchar buffer[BLOCKSIZE];
 uchar left[256], right[256]; /* pair table */
 uchar count[256][256];       /* pair counts */   
-int size;  
+unsigned short size;  
 
 /* read block from file into pair count */
 /* return true if not done reading file */
@@ -276,7 +276,6 @@ void writeblock(FILE* outfile)
     }
 
     /* write compressed buffer size */
-    assert(size <= 0xFFFF);
     putc(size >> 8, outfile);
     putc(size & 0xFF, outfile);
 

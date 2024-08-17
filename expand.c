@@ -28,9 +28,11 @@ unsigned char stack[256]; /* overflow? */
 /* return true if there are more blocks (doesn't end in EOF) */
 int expand(FILE* infile, FILE* outfile) 
 {    
-    int c, i, sp = 0;
+    unsigned i, sp = 0;
     signed char count;
-    int b = 0, usize, lsize, size;
+    unsigned char usize, lsize;
+    unsigned short size;
+    unsigned b = 0;
 
     /* reset pair table to defaults */
     for (i = 0; i < 256; ++i)
@@ -43,7 +45,7 @@ int expand(FILE* infile, FILE* outfile)
     /* read compressed pair table */
     while(b < 256) /* b = current table index */
     {
-        c = getc(infile);
+        int c = getc(infile);
         if (c == EOF) return 0; /* last block */
         count = (signed char)c; 
 
@@ -71,7 +73,7 @@ int expand(FILE* infile, FILE* outfile)
 
         else /* positive count: read |count| pairs */
         {
-            int b_end = b + count;
+            unsigned b_end = b + count;
             for (; b < b_end; ++b)
             {
                 left[b]  = getc(infile);
@@ -105,6 +107,7 @@ int expand(FILE* infile, FILE* outfile)
     i = 0; 
     while (i < size || sp) /* more to read or stack non-empty */
     {
+        int c;
         if (sp == 0) /* stack empty */
         {
             c = getc(infile); /* read byte */
