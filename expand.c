@@ -18,6 +18,8 @@
 #include <stdio.h>
 #include <assert.h>
 
+#define DEBUG 0 /* debug flag */
+
 unsigned char left[256], right[256];
 unsigned char stack[256]; /* overflow? */
 
@@ -45,7 +47,8 @@ int expand(FILE* infile, FILE* outfile)
         if (c == EOF) return 0; /* last block */
         count = (signed char)c; 
 
-        printf("b: %d Count: %d\n", b, count);
+        if (DEBUG) 
+            printf("b: %d Count: %d\n", b, count);
 
         assert(count != 0);
 
@@ -60,7 +63,8 @@ int expand(FILE* infile, FILE* outfile)
                 /* doesn't handle if file unexpectedly ends */
                 left[b] = getc(infile);
                 right[b] = getc(infile);
-                printf("Read single pair %02x%02x\n", left[b], right[b]);
+                if (DEBUG)
+                    printf("Read single pair %02x%02x\n", left[b], right[b]);
                 ++b;
             }
         }
@@ -72,26 +76,30 @@ int expand(FILE* infile, FILE* outfile)
             {
                 left[b]  = getc(infile);
                 right[b] = getc(infile);
-                printf("Read pair %02x%02x\n", left[b], right[b]);
+                if (DEBUG)
+                    printf("Read pair %02x%02x\n", left[b], right[b]);
             }
         }
     }
     
     assert(b == 256); /* counts valid */
 
-    printf("Pair table:\n");
-    for (b = 0; b < 256; ++b) 
+    if (DEBUG)
     {
-        printf("%02x:%02x%02x\t", b, left[b], right[b]);
+        printf("Pair table:\n");
+        for (b = 0; b < 256; ++b) 
+        {
+            printf("%02x:%02x%02x\t", b, left[b], right[b]);
+        }
+        printf("\n");
     }
-    printf("\n");
-
     /* read compressed buffer size */
     usize = getc(infile);
     lsize = getc(infile);
     size = (usize << 8) + lsize;
 
-    printf("size: %d(%02x%02x)\n", size, usize, lsize);
+    if (DEBUG)
+        printf("size: %d(%02x%02x)\n", size, usize, lsize);
 
     /* write output, pushing pairs to stack */
     i = 0; 
@@ -100,13 +108,13 @@ int expand(FILE* infile, FILE* outfile)
         if (sp == 0) /* stack empty */
         {
             c = getc(infile); /* read byte */
-            printf("read byte: %02x\n", c);
+            if (DEBUG) printf("read byte: %02x\n", c);
             ++i; 
         }
         else
         {
             c = stack[--sp]; /* pop byte */
-            printf("pop byte: %02x\n", c);
+            if (DEBUG) printf("pop byte: %02x\n", c);
         }
 
         if (c != left[c]) /* pair in table */ 
@@ -114,12 +122,12 @@ int expand(FILE* infile, FILE* outfile)
             /* push pair */
             stack[sp++] = right[c];
             stack[sp++] = left[c];
-            printf("push pair %02x%02x\n", left[c], right[c]);
+            if (DEBUG) printf("push pair %02x%02x\n", left[c], right[c]);
         }
         else /* pair not in table */
         {
             putc(c, outfile); /* write literal byte */
-            printf("write byte %02x\n", c);
+            if (DEBUG) printf("write byte %02x\n", c);
         }
     }
     
