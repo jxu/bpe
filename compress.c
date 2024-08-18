@@ -21,6 +21,7 @@
 */
 #include <stdio.h>
 #include <assert.h>
+#include <limits.h>
 
 #define BLOCKSIZE 5000 /* Maximum block size */
 #define MAXCHARS   200 /* Charset per block (leave some unused) */
@@ -31,8 +32,8 @@ typedef unsigned char uchar;
 
 /* file-wide globals per-block */
 uchar buffer[BLOCKSIZE];
-uchar left[256], right[256]; /* pair table */
-uchar count[256][256];       /* pair counts */
+uchar left[UCHAR_MAX+1], right[UCHAR_MAX+1]; /* pair table */
+uchar count[UCHAR_MAX+1][UCHAR_MAX+1];       /* pair counts */
 unsigned short size;
 
 /* read block from file into pair count */
@@ -45,8 +46,8 @@ int readblock(FILE* infile)
     if (DEBUG) printf("*** READ BLOCK ***\n");
 
     /* reset counts and pair table */
-    for (i = 0; i < 256; ++i) {
-        for (j = 0; j < 256; ++j)
+    for (i = 0; i <= UCHAR_MAX; ++i) {
+        for (j = 0; j <= UCHAR_MAX; ++j)
             count[i][j] = 0;
 
         left[i] = i;
@@ -63,9 +64,9 @@ int readblock(FILE* infile)
         if (c == EOF) break;
 
         if (size > 0) {
-            uchar lastc = buffer[size-1];
+            uchar lastc = buffer[size - 1];
             /* count pairs without overflow */
-            if (count[lastc][c] < 255)
+            if (count[lastc][c] < UCHAR_MAX)
                 ++count[lastc][c];
         }
 
@@ -82,12 +83,12 @@ int readblock(FILE* infile)
         printf("size: %d used: %d\n", size, used);
 
         printf("buffer:\n");
-        for (i=0; i<size; ++i)
+        for (i = 0; i < size; ++i)
             printf("%02x ", buffer[i]);
 
         printf("\n(non-zero) count table:\n");
-        for (i=0; i<256; ++i)
-            for (j=0; j<256; ++j)
+        for (i = 0; i <= UCHAR_MAX; ++i)
+            for (j = 0; j <= UCHAR_MAX; ++j)
                 if (count[i][j])
                     printf("%02x%02x:%02x\t", i, j, count[i][j]);
 
@@ -113,8 +114,8 @@ void compress()
 
         if (DEBUG) printf("COMPRESSION PASS %d\n", pass);
 
-        for (i=0; i<256; ++i) {
-            for (j=0; j<256; ++j) {
+        for (i = 0; i <= UCHAR_MAX; ++i) {
+            for (j = 0; j <= UCHAR_MAX; ++j) {
                 /* record best pair and count */
                 if (count[i][j] > bestcount) {
                     bestcount = count[i][j];
@@ -132,7 +133,7 @@ void compress()
 
 
         /* find unused byte to use */
-        for (y=255; y>=0; --y)
+        for (y = UCHAR_MAX; y >= 0; --y)
             if (left[y] == y && right[y] == 0)
                 break;
 
@@ -144,8 +145,8 @@ void compress()
         /* replace pairs with unused byte in-place in buffer */
         while (r < size) {
             /* match best pair */
-            if (r+1 < size &&
-                    buffer[r] == bestleft && buffer[r+1] == bestright) {
+            if (r + 1 < size &&
+                    buffer[r] == bestleft && buffer[r + 1] == bestright) {
                 buffer[w++] = y; /* write new byte */
                 r += 2; /* move read index past pair */
             } else {
@@ -159,16 +160,16 @@ void compress()
         /* TODO: update counts during writing instead */
         /* recreate count table */
 
-        for (i = 0; i < 256; ++i)
-            for (j = 0; j < 256; ++j)
+        for (i = 0; i <= UCHAR_MAX; ++i)
+            for (j = 0; j <= UCHAR_MAX; ++j)
                 count[i][j] = 0;
 
-        for (i=0; i<size; ++i) {
-            if (i+1 < size) {
+        for (i = 0; i < size; ++i) {
+            if (i + 1 < size) {
                 uchar c = buffer[i];
-                uchar d = buffer[i+1];
+                uchar d = buffer[i + 1];
 
-                if (count[c][d] < 255)
+                if (count[c][d] < UCHAR_MAX)
                     ++count[c][d];
             }
         }
@@ -180,13 +181,13 @@ void compress()
         if (DEBUG) {
 
             printf("new buffer(%d): ", size);
-            for (i=0; i<size; ++i)
+            for (i = 0; i < size; ++i)
                 printf("%02x ", buffer[i]);
             printf("\n");
 
             printf("used pair table:\n");
 
-            for (i=0; i<256; ++i) {
+            for (i = 0; i <= UCHAR_MAX; ++i) {
                 if (i != left[i])
                     printf("%02x:%02x%02x\n", i, left[i], right[i]);
             }
@@ -201,17 +202,16 @@ void compress()
 void writeblock(FILE* outfile)
 {
     int c = 0;
-    signed char count = 0;
 
     if (DEBUG) printf("*** WRITE BLOCK ***\n");
 
-    while (c < 256) {
-        if (DEBUG) printf("c: %02x\t",c);
+    while (c <= UCHAR_MAX) {
+        signed char count = 0;
+        if (DEBUG) printf("c: %02x\t", c);
 
-        count = 0;
         /* run of non-pairs */
         if (c == left[c]) {
-            while (c == left[c] && c < 256 && count > -128) {
+            while (c == left[c] && c <= UCHAR_MAX && count > CHAR_MIN) {
                 ++c;
                 --count;
             }
@@ -221,7 +221,7 @@ void writeblock(FILE* outfile)
             if (DEBUG) printf("count:%d\t", count);
 
             /* output single pair if not end of table */
-            if (c < 256) {
+            if (c <= UCHAR_MAX) {
                 putc(left[c], outfile);
                 putc(right[c], outfile);
                 if (DEBUG) printf("single pair %02x%02x\n", left[c], right[c]);
@@ -231,7 +231,7 @@ void writeblock(FILE* outfile)
         } else {
             /* run of pairs */
             int b = c; /* index of start of run */
-            while (c != left[c] && c < 256 && count < 127) {
+            while (c != left[c] && c <= UCHAR_MAX && count < CHAR_MAX) {
                 ++c;
                 ++count;
             }
