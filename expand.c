@@ -21,11 +21,12 @@
 
 #include <stdio.h>
 #include <assert.h>
+#include <limits.h>
 
 #define DEBUG 0 /* debug flag */
 
-unsigned char left[256], right[256];
-unsigned char stack[256]; /* overflow? */
+unsigned char left[UCHAR_MAX+1], right[UCHAR_MAX+1];
+unsigned char stack[UCHAR_MAX+1]; /* overflow? */
 
 
 /* expand block */
@@ -39,14 +40,14 @@ int expand(FILE* infile, FILE* outfile)
     unsigned b = 0;
 
     /* reset pair table to defaults */
-    for (i = 0; i < 256; ++i) {
+    for (i = 0; i <= UCHAR_MAX; ++i) {
         left[i] = i;
         right[i] = 0;
     }
 
 
     /* read compressed pair table */
-    while(b < 256) { /* b = current table index */
+    while(b <= UCHAR_MAX) { /* b = current table index */
         int c = getc(infile);
         if (c == EOF) return 0; /* last block */
         count = (signed char)c;
@@ -61,7 +62,7 @@ int expand(FILE* infile, FILE* outfile)
             b += -count;
 
             /* if not end table, read single pair */
-            if (b < 256) {
+            if (b <= UCHAR_MAX) {
                 /* doesn't handle if file unexpectedly ends */
                 left[b] = getc(infile);
                 right[b] = getc(infile);
@@ -82,11 +83,11 @@ int expand(FILE* infile, FILE* outfile)
         }
     }
 
-    assert(b == 256); /* counts valid */
+    assert(b == UCHAR_MAX+1); /* counts valid */
 
     if (DEBUG) {
         printf("Pair table:\n");
-        for (b = 0; b < 256; ++b) {
+        for (b = 0; b <= UCHAR_MAX; ++b) {
             printf("%02x:%02x%02x\t", b, left[b], right[b]);
         }
         printf("\n");
