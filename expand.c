@@ -1,8 +1,12 @@
-/* BPE expand routine
+/* expand.c: BPE expand routine
 
-   pseudocode:
+   To test compress and expand:
+   ../compress gcc.elf gcc.bpe > compress.log &&
+   ../expand   gcc.bpe gcc.new > expand.log &&
+   cmp gcc.elf gcc.new
 
-    While not end of file
+   Pseudocode:
+   While not end of file
       Read pair table from input
       While more data in block
          If stack empty, read byte from input
@@ -11,7 +15,7 @@
          Else write byte to output
       End while
 
-    End while
+   End while
 */
 
 
