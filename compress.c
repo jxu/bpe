@@ -42,6 +42,18 @@ uchar left[UCHAR_MAX+1], right[UCHAR_MAX+1]; /* pair table */
 uchar count[UCHAR_MAX+1][UCHAR_MAX+1];       /* pair counts */
 unsigned short size;
 
+void print_buffer() 
+{
+    int i;
+    DEBUG_PRINT((stderr, "buffer[%d]:\n", size));
+    for (i = 0; i < size; ++i) {
+        DEBUG_PRINT((stderr, "%02x ", buffer[i]));
+        if (i % 16 == 7)  DEBUG_PRINT((stderr, " "));
+        if (i % 16 == 15) DEBUG_PRINT((stderr, "\n"));
+    }    
+    DEBUG_PRINT((stderr, "\n"));
+}
+
 /* read block from file into pair count */
 /* return true if not done reading file */
 int readblock(FILE* infile)
@@ -87,12 +99,9 @@ int readblock(FILE* infile)
 
     DEBUG_PRINT((stderr, "size: %d used: %d\n", size, used));
 
-    DEBUG_PRINT((stderr, "buffer[%d]:\n", size));
-    for (i = 0; i < size; ++i) {
-        DEBUG_PRINT((stderr, "%02x ", buffer[i]));
-    }
+    print_buffer();
     
-    DEBUG_PRINT((stderr, "\n(non-zero) count table:\n"));
+    DEBUG_PRINT((stderr, "(non-zero) count table:\n"));
     for (i = 0; i <= UCHAR_MAX; ++i)
         for (j = 0; j <= UCHAR_MAX; ++j)
             if (count[i][j])
@@ -185,13 +194,8 @@ void compress()
         left[y] = bestleft;
         right[y] = bestright;
 
+        print_buffer();
  
-
-        DEBUG_PRINT((stderr, "new buffer(%d): ", size));
-        for (i = 0; i < size; ++i)
-            DEBUG_PRINT((stderr, "%02x ", buffer[i]));
-        DEBUG_PRINT((stderr, "\n"));
-
         DEBUG_PRINT((stderr, "used pair table:\n"));
 
         for (i = 0; i <= UCHAR_MAX; ++i) {
