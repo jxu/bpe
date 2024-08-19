@@ -26,7 +26,13 @@
 #define BLOCKSIZE 5000 /* Maximum block size */
 #define MAXCHARS   200 /* Charset per block (leave some unused) */
 #define MINPAIRS     3 /* Min pairs needed for compress */
-#define DEBUG        0 /* debug flag */
+
+#ifdef DEBUG
+/* C99: DEBUG_PRINT(...) fprintf(stderr, __VA_ARGS__) */
+    #define DEBUG_PRINT(x) fprintf x 
+#else
+    #define DEBUG_PRINT(x) do {} while (0)
+#endif
 
 typedef unsigned char uchar;
 
@@ -43,7 +49,7 @@ int readblock(FILE* infile)
     int i, j, c;
     int used = 0;
 
-    if (DEBUG) printf("*** READ BLOCK ***\n");
+    DEBUG_PRINT((stderr, "*** READ BLOCK ***\n"));
 
     /* reset counts and pair table */
     for (i = 0; i <= UCHAR_MAX; ++i) {
@@ -79,21 +85,21 @@ int readblock(FILE* infile)
         buffer[size++] = c;  /* push c to buffer */
     }
 
-    if (DEBUG) {
-        printf("size: %d used: %d\n", size, used);
+    DEBUG_PRINT((stderr, "size: %d used: %d\n", size, used));
 
-        printf("buffer:\n");
-        for (i = 0; i < size; ++i)
-            printf("%02x ", buffer[i]);
-
-        printf("\n(non-zero) count table:\n");
-        for (i = 0; i <= UCHAR_MAX; ++i)
-            for (j = 0; j <= UCHAR_MAX; ++j)
-                if (count[i][j])
-                    printf("%02x%02x:%02x\t", i, j, count[i][j]);
-
-        printf("\n");
+    DEBUG_PRINT((stderr, "buffer[%d]:\n", size));
+    for (i = 0; i < size; ++i) {
+        DEBUG_PRINT((stderr, "%02x ", buffer[i]));
     }
+    
+    DEBUG_PRINT((stderr, "\n(non-zero) count table:\n"));
+    for (i = 0; i <= UCHAR_MAX; ++i)
+        for (j = 0; j <= UCHAR_MAX; ++j)
+            if (count[i][j])
+                DEBUG_PRINT((stderr, "%02x%02x:%02x\t", i, j, count[i][j]));
+
+    DEBUG_PRINT((stderr, "\n"));
+    
 
     return (c != EOF);
 }
@@ -103,7 +109,7 @@ void compress()
 {
     int pass, i, j, y;
 
-    if (DEBUG) printf("*** COMPRESS BLOCK ***\n");
+    DEBUG_PRINT((stderr, "*** COMPRESS BLOCK ***\n"));
 
     /* while compression possible:
        pick pairs until no unused bytes or no good pairs */
@@ -112,7 +118,7 @@ void compress()
         uchar bestcount = 0;
         uchar bestleft = 0, bestright = 0;
 
-        if (DEBUG) printf("COMPRESSION PASS %d\n", pass);
+        DEBUG_PRINT((stderr, "COMPRESSION PASS %d\n", pass));
 
         for (i = 0; i <= UCHAR_MAX; ++i) {
             for (j = 0; j <= UCHAR_MAX; ++j) {
@@ -125,8 +131,9 @@ void compress()
             }
         }
 
-        if (DEBUG)
-            printf("best pair %02x%02x:%d\n", bestleft, bestright, bestcount);
+        
+        DEBUG_PRINT((stderr, "best pair %02x%02x:%d\n", 
+                     bestleft, bestright, bestcount));
 
         if (bestcount < MINPAIRS)
             break;
@@ -139,7 +146,7 @@ void compress()
 
         if (y < 0) break;  /* no more unused */
 
-        if (DEBUG) printf("unused byte: %02x\n", y);
+        DEBUG_PRINT((stderr, "unused byte: %02x\n", y));
 
 
         /* replace pairs with unused byte in-place in buffer */
@@ -178,24 +185,24 @@ void compress()
         left[y] = bestleft;
         right[y] = bestright;
 
-        if (DEBUG) {
+ 
 
-            printf("new buffer(%d): ", size);
-            for (i = 0; i < size; ++i)
-                printf("%02x ", buffer[i]);
-            printf("\n");
+        DEBUG_PRINT((stderr, "new buffer(%d): ", size));
+        for (i = 0; i < size; ++i)
+            DEBUG_PRINT((stderr, "%02x ", buffer[i]));
+        DEBUG_PRINT((stderr, "\n"));
 
-            printf("used pair table:\n");
+        DEBUG_PRINT((stderr, "used pair table:\n"));
 
-            for (i = 0; i <= UCHAR_MAX; ++i) {
-                if (i != left[i])
-                    printf("%02x:%02x%02x\n", i, left[i], right[i]);
-            }
-            printf("\n");
+        for (i = 0; i <= UCHAR_MAX; ++i) {
+            if (i != left[i])
+                DEBUG_PRINT((stderr, "%02x:%02x%02x\n", i, left[i], right[i]));
         }
+        DEBUG_PRINT((stderr, "\n"));
+        
     }
 
-    if (DEBUG) printf("\n");
+    DEBUG_PRINT((stderr, "\n"));
 }
 
 /* write pair table and compressed data */
@@ -203,11 +210,11 @@ void writeblock(FILE* outfile)
 {
     int c = 0;
 
-    if (DEBUG) printf("*** WRITE BLOCK ***\n");
+    DEBUG_PRINT((stderr, "*** WRITE BLOCK ***\n"));
 
     while (c <= UCHAR_MAX) {
         signed char count = 0;
-        if (DEBUG) printf("c: %02x\t", c);
+        DEBUG_PRINT((stderr, "c: %02x\t", c));
 
         /* run of non-pairs */
         if (c == left[c]) {
@@ -218,13 +225,14 @@ void writeblock(FILE* outfile)
             /* output count as negative byte */
             assert(count < 0);
             putc(count, outfile);
-            if (DEBUG) printf("count:%d\t", count);
+            DEBUG_PRINT((stderr, "count:%d\t", count));
 
             /* output single pair if not end of table */
             if (c <= UCHAR_MAX) {
                 putc(left[c], outfile);
                 putc(right[c], outfile);
-                if (DEBUG) printf("single pair %02x%02x\n", left[c], right[c]);
+                DEBUG_PRINT((stderr, "single pair %02x%02x\n", 
+                             left[c], right[c]));
                 ++c;
             }
 
@@ -239,12 +247,12 @@ void writeblock(FILE* outfile)
             /* output count */
             assert(count > 0);
             putc(count, outfile);
-            if (DEBUG) printf("count:%d\n", count);
+            DEBUG_PRINT((stderr, "count:%d\n", count));
 
             for (; b < c; ++b) {
                 putc(left[b], outfile);
                 putc(right[b], outfile);
-                if (DEBUG) printf("%02x%02x\n", left[b], right[b]);
+                DEBUG_PRINT((stderr, "%02x%02x\n", left[b], right[b]));
             }
 
 
@@ -255,12 +263,12 @@ void writeblock(FILE* outfile)
     putc(size >> 8, outfile);
     putc(size & 0xFF, outfile);
 
-    if (DEBUG) printf("compressed size: %d (%04x)\n", size, size);
+    DEBUG_PRINT((stderr, "compressed size: %d (%04x)\n", size, size));
 
 
     /* write compressed buffer */
     fwrite(buffer, 1, size, outfile);
-    if (DEBUG) printf("write buffer(%d)\n", size);
+    DEBUG_PRINT((stderr, "write buffer(%d)\n", size));
 
 }
 
@@ -272,7 +280,7 @@ int main(int argc, char* argv[])
     FILE* infile, * outfile;
 
     if (argc != 3) {
-        printf("Usage: compress infile outfile\n");
+        DEBUG_PRINT((stderr, "Usage: compress infile outfile\n"));
         return -1;
     }
 
@@ -280,12 +288,12 @@ int main(int argc, char* argv[])
     outfile = fopen(argv[2], "w");
 
     if (infile == NULL) {
-        printf("bad infile\n");
+        DEBUG_PRINT((stderr, "bad infile\n"));
         return -1;
     }
 
     if (outfile == NULL) {
-        printf("bad outfile\n");
+        DEBUG_PRINT((stderr, "bad outfile\n"));
         return -1;
     }
 

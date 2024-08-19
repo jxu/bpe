@@ -1,8 +1,8 @@
 /* expand.c: BPE expand routine
 
    To test compress and expand:
-   ../compress gcc.elf gcc.bpe > compress.log &&
-   ../expand   gcc.bpe gcc.new > expand.log &&
+   ../compress gcc.elf gcc.bpe 2> compress.log &&
+   ../expand   gcc.bpe gcc.new 2> expand.log   &&
    cmp gcc.elf gcc.new
 
    Pseudocode:
@@ -23,7 +23,12 @@
 #include <assert.h>
 #include <limits.h>
 
-#define DEBUG 0 /* debug flag */
+#ifdef DEBUG
+/* C99: DEBUG_PRINT(...) fprintf(stderr, __VA_ARGS__) */
+    #define DEBUG_PRINT(x) fprintf x 
+#else
+    #define DEBUG_PRINT(x) do {} while (0)
+#endif
 
 unsigned char left[UCHAR_MAX+1], right[UCHAR_MAX+1];
 unsigned char stack[UCHAR_MAX+1]; /* overflow? */
@@ -52,8 +57,7 @@ int expand(FILE* infile, FILE* outfile)
         if (c == EOF) return 0; /* last block */
         count = (signed char)c;
 
-        if (DEBUG)
-            printf("b: %d Count: %d\n", b, count);
+        DEBUG_PRINT((stderr, "b: %d Count: %d\n", b, count));
 
         assert(count != 0);
 
@@ -66,8 +70,8 @@ int expand(FILE* infile, FILE* outfile)
                 /* doesn't handle if file unexpectedly ends */
                 left[b] = getc(infile);
                 right[b] = getc(infile);
-                if (DEBUG)
-                    printf("Read single pair %02x%02x\n", left[b], right[b]);
+                DEBUG_PRINT((stderr, "Read single pair %02x%02x\n", 
+                             left[b], right[b]));
                 ++b;
             }
         }
@@ -77,28 +81,27 @@ int expand(FILE* infile, FILE* outfile)
             for (; b < b_end; ++b) {
                 left[b]  = getc(infile);
                 right[b] = getc(infile);
-                if (DEBUG)
-                    printf("Read pair %02x%02x\n", left[b], right[b]);
+                DEBUG_PRINT((stderr, "Read pair %02x%02x\n", 
+                             left[b], right[b]));
             }
         }
     }
 
     assert(b == UCHAR_MAX+1); /* counts valid */
 
-    if (DEBUG) {
-        printf("Pair table:\n");
-        for (b = 0; b <= UCHAR_MAX; ++b) {
-            printf("%02x:%02x%02x\t", b, left[b], right[b]);
-        }
-        printf("\n");
+
+    DEBUG_PRINT((stderr, "Pair table:\n"));
+    for (b = 0; b <= UCHAR_MAX; ++b) {
+        DEBUG_PRINT((stderr, "%02x:%02x%02x\t", b, left[b], right[b]));
     }
+    DEBUG_PRINT((stderr, "\n"));
+    
     /* read compressed buffer size */
     usize = getc(infile);
     lsize = getc(infile);
     size = (usize << 8) + lsize;
 
-    if (DEBUG)
-        printf("size: %d(%02x%02x)\n", size, usize, lsize);
+    DEBUG_PRINT((stderr, "size: %d(%02x%02x)\n", size, usize, lsize));
 
     /* write output, pushing pairs to stack */
     i = 0;
@@ -106,21 +109,21 @@ int expand(FILE* infile, FILE* outfile)
         int c;
         if (sp == 0) { /* stack empty */
             c = getc(infile); /* read byte */
-            if (DEBUG) printf("read byte: %02x\n", c);
+            DEBUG_PRINT((stderr, "read byte: %02x\n", c));
             ++i;
         } else {
             c = stack[--sp]; /* pop byte */
-            if (DEBUG) printf("pop byte: %02x\n", c);
+            DEBUG_PRINT((stderr, "pop byte: %02x\n", c));
         }
 
         if (c != left[c]) { /* pair in table */
             /* push pair */
             stack[sp++] = right[c];
             stack[sp++] = left[c];
-            if (DEBUG) printf("push pair %02x%02x\n", left[c], right[c]);
+            DEBUG_PRINT((stderr, "push pair %02x%02x\n", left[c], right[c]));
         } else { /* pair not in table */
             putc(c, outfile); /* write literal byte */
-            if (DEBUG) printf("write byte %02x\n", c);
+            DEBUG_PRINT((stderr, "write byte %02x\n", c));
         }
     }
 
@@ -133,7 +136,7 @@ int main(int argc, char* argv[])
     int notdone;
 
     if (argc != 3) {
-        printf("Usage: expand infile outfile\n");
+        DEBUG_PRINT((stderr, "Usage: expand infile outfile\n"));
         return -1;
     }
 
@@ -141,12 +144,12 @@ int main(int argc, char* argv[])
     outfile = fopen(argv[2], "w");
 
     if (infile == NULL) {
-        printf("bad infile\n");
+        DEBUG_PRINT((stderr, "bad infile\n"));
         return -1;
     }
 
     if (outfile == NULL) {
-        printf("bad outfile\n");
+        DEBUG_PRINT((stderr, "bad outfile\n"));
         return -1;
     }
 
