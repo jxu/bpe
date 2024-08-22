@@ -54,6 +54,16 @@ void print_buffer()
     DEBUG_PRINT((stderr, "\n"));
 }
 
+void print_count()
+{
+    int i, j;
+    DEBUG_PRINT((stderr, "(non-zero) count table:\n"));
+    for (i = 0; i <= UCHAR_MAX; ++i)
+        for (j = 0; j <= UCHAR_MAX; ++j)
+            if (count[i][j])
+                DEBUG_PRINT((stderr, "%02x%02x:%02x\t", i, j, count[i][j]));
+}
+
 /* read block from file into pair count */
 /* return true if not done reading file */
 int readblock(FILE* infile)
@@ -98,18 +108,10 @@ int readblock(FILE* infile)
     }
 
     DEBUG_PRINT((stderr, "size: %d used: %d\n", size, used));
-
     print_buffer();
-    
-    DEBUG_PRINT((stderr, "(non-zero) count table:\n"));
-    for (i = 0; i <= UCHAR_MAX; ++i)
-        for (j = 0; j <= UCHAR_MAX; ++j)
-            if (count[i][j])
-                DEBUG_PRINT((stderr, "%02x%02x:%02x\t", i, j, count[i][j]));
-
+    print_count();
     DEBUG_PRINT((stderr, "\n"));
     
-
     return (c != EOF);
 }
 
@@ -128,6 +130,8 @@ void compress()
         uchar bestl = 0, bestr = 0;
 
         DEBUG_PRINT((stderr, "COMPRESSION PASS %d\n", pass));
+
+
 
         for (i = 0; i <= UCHAR_MAX; ++i) {
             for (j = 0; j <= UCHAR_MAX; ++j) {
