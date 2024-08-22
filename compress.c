@@ -1,22 +1,17 @@
 /*  Byte Pair Encoding compression
     Based on idea and code from Philip Gage
+    http://www.pennelynn.com/Documents/CUJ/HTML/94HTML/19940045.HTM
 
     Pseudocode:
 
     While not end of file
-       Read next block of data into buffer and
-          enter all pairs in hash table with counts of their occurrence
-       While compression possible
-          Find most frequent byte pair
+       Read next block of data into buffer and enter all pairs in hash table
+       While compression possible (unused bytes)
+          Find most frequent byte pair, break if not frequent enough
           Replace pair with an unused byte
-          If substitution deletes a pair from buffer,
-             decrease its count in the hash table
-          If substitution adds a new pair to the buffer,
-             increase its count in the hash table
           Add pair to pair table
        End while
        Write pair table and packed data
-
     End while
 
     Compile: 
@@ -43,7 +38,7 @@ typedef unsigned char uchar;
 
 /* file-wide globals per-block */
 uchar buffer[BLOCKSIZE];
-uchar left[UCHAR_MAX+1], right[UCHAR_MAX+1]; /* pair table */
+uchar lpair[UCHAR_MAX+1], rpair[UCHAR_MAX+1]; /* pair table */
 uchar count[UCHAR_MAX+1][UCHAR_MAX+1];       /* pair counts */
 unsigned short size;
 
@@ -73,8 +68,8 @@ int readblock(FILE* infile)
         for (j = 0; j <= UCHAR_MAX; ++j)
             count[i][j] = 0;
 
-        left[i] = i;
-        right[i] = 0;
+        lpair[i] = i;
+        rpair[i] = 0;
     }
 
     size = 0; /* block size */
@@ -94,8 +89,8 @@ int readblock(FILE* infile)
         }
 
         /* increase used count if new, mark in pair table as used */
-        if (right[c] == 0) {
-            right[c] = 1;
+        if (rpair[c] == 0) {
+            rpair[c] = 1;
             ++used;
         }
 
@@ -121,7 +116,7 @@ int readblock(FILE* infile)
 /* for block, write pair and packed data */
 void compress()
 {
-    int pass, i, j, y;
+    int pass, i, j, unused;
 
     DEBUG_PRINT((stderr, "*** COMPRESS BLOCK ***\n"));
 
@@ -130,7 +125,7 @@ void compress()
     for (pass = 1; ; ++pass) {
         int r = 0, w = 0; /* read and write index */
         uchar bestcount = 0;
-        uchar bestleft = 0, bestright = 0;
+        uchar bestl = 0, bestr = 0;
 
         DEBUG_PRINT((stderr, "COMPRESSION PASS %d\n", pass));
 
@@ -139,36 +134,36 @@ void compress()
                 /* record best pair and count */
                 if (count[i][j] > bestcount) {
                     bestcount = count[i][j];
-                    bestleft = i;
-                    bestright = j;
+                    bestl = i;
+                    bestr = j;
                 }
             }
         }
 
         
         DEBUG_PRINT((stderr, "best pair %02x%02x:%d\n", 
-                     bestleft, bestright, bestcount));
+                     bestl, bestr, bestcount));
 
         if (bestcount < MINPAIRS)
             break;
 
 
         /* find unused byte to use */
-        for (y = UCHAR_MAX; y >= 0; --y)
-            if (left[y] == y && right[y] == 0)
+        for (unused = UCHAR_MAX; unused >= 0; --unused)
+            if (lpair[unused] == unused && rpair[unused] == 0)
                 break;
 
-        if (y < 0) break;  /* no more unused */
+        if (unused < 0) break;  /* no more unused */
 
-        DEBUG_PRINT((stderr, "unused byte: %02x\n", y));
+        DEBUG_PRINT((stderr, "unused byte: %02x\n", unused));
 
 
         /* replace pairs with unused byte in-place in buffer */
         while (r < size) {
             /* match best pair */
             if (r + 1 < size &&
-                    buffer[r] == bestleft && buffer[r + 1] == bestright) {
-                buffer[w++] = y; /* write new byte */
+                    buffer[r] == bestl && buffer[r + 1] == bestr) {
+                buffer[w++] = unused; /* write new byte */
                 r += 2; /* move read index past pair */
             } else {
                 /* copy buffer[r] to buffer[w], increment indexes */
@@ -196,16 +191,16 @@ void compress()
         }
 
         /* add  pair in pair table */
-        left[y] = bestleft;
-        right[y] = bestright;
+        lpair[unused] = bestl;
+        rpair[unused] = bestr;
 
         print_buffer();
  
         DEBUG_PRINT((stderr, "used pair table:\n"));
 
         for (i = 0; i <= UCHAR_MAX; ++i) {
-            if (i != left[i])
-                DEBUG_PRINT((stderr, "%02x:%02x%02x\n", i, left[i], right[i]));
+            if (i != lpair[i])
+                DEBUG_PRINT((stderr, "%02x:%02x%02x\n", i, lpair[i], rpair[i]));
         }
         DEBUG_PRINT((stderr, "\n"));
         
@@ -226,8 +221,8 @@ void writeblock(FILE* outfile)
         DEBUG_PRINT((stderr, "c: %02x\t", c));
 
         /* run of non-pairs */
-        if (c == left[c]) {
-            while (c == left[c] && c <= UCHAR_MAX && count > CHAR_MIN) {
+        if (c == lpair[c]) {
+            while (c == lpair[c] && c <= UCHAR_MAX && count > CHAR_MIN) {
                 ++c;
                 --count;
             }
@@ -238,17 +233,17 @@ void writeblock(FILE* outfile)
 
             /* output single pair if not end of table */
             if (c <= UCHAR_MAX) {
-                putc(left[c], outfile);
-                putc(right[c], outfile);
+                putc(lpair[c], outfile);
+                putc(rpair[c], outfile);
                 DEBUG_PRINT((stderr, "single pair %02x%02x\n", 
-                             left[c], right[c]));
+                             lpair[c], rpair[c]));
                 ++c;
             }
 
         } else {
             /* run of pairs */
             int b = c; /* index of start of run */
-            while (c != left[c] && c <= UCHAR_MAX && count < CHAR_MAX) {
+            while (c != lpair[c] && c <= UCHAR_MAX && count < CHAR_MAX) {
                 ++c;
                 ++count;
             }
@@ -259,9 +254,9 @@ void writeblock(FILE* outfile)
             DEBUG_PRINT((stderr, "count:%d\n", count));
 
             for (; b < c; ++b) {
-                putc(left[b], outfile);
-                putc(right[b], outfile);
-                DEBUG_PRINT((stderr, "%02x%02x\n", left[b], right[b]));
+                putc(lpair[b], outfile);
+                putc(rpair[b], outfile);
+                DEBUG_PRINT((stderr, "%02x%02x\n", lpair[b], rpair[b]));
             }
 
 
