@@ -1,10 +1,5 @@
 /*  expand.c: BPE expand routine
 
-    To test compress and expand:
-    ../compress gcc.elf gcc.bpe 2> compress.log &&
-    ../expand   gcc.bpe gcc.new 2> expand.log   &&
-    cmp gcc.elf gcc.new
-
     Pseudocode:
     While not end of file
         Read pair table from input
