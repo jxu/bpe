@@ -1,21 +1,27 @@
-/* expand.c: BPE expand routine
+/*  expand.c: BPE expand routine
 
-   To test compress and expand:
-   ../compress gcc.elf gcc.bpe 2> compress.log &&
-   ../expand   gcc.bpe gcc.new 2> expand.log   &&
-   cmp gcc.elf gcc.new
+    To test compress and expand:
+    ../compress gcc.elf gcc.bpe 2> compress.log &&
+    ../expand   gcc.bpe gcc.new 2> expand.log   &&
+    cmp gcc.elf gcc.new
 
-   Pseudocode:
-   While not end of file
-      Read pair table from input
-      While more data in block
-         If stack empty, read byte from input
-         Else pop byte from stack
-         If byte in table, push pair on stack
-         Else write byte to output
-      End while
+    Pseudocode:
+    While not end of file
+        Read pair table from input
+        While more data in block
+            If stack empty, read byte from input
+            Else pop byte from stack
+            If byte in table, push pair on stack
+            Else write byte to output
+        End while
 
-   End while
+    End while
+
+    Compile:
+      gcc -O3 -std=c89 -pedantic -Wall -Wextra -DDEBUG -o expand expand.c
+    Usage:
+      ./expand < test/sample.bpe > test/sample.new 2> test/expand.log
+      cmp test/sample.txt test/sample.new
 */
 
 
@@ -130,37 +136,14 @@ int expand(FILE* infile, FILE* outfile)
     return 1; /* try another block */
 }
 
-int main(int argc, char* argv[])
+int main(void)
 {
-    FILE* infile, * outfile;
     int notdone;
 
-    if (argc != 3) {
-        DEBUG_PRINT((stderr, "Usage: expand infile outfile\n"));
-        return -1;
-    }
-
-    infile  = fopen(argv[1], "r");
-    outfile = fopen(argv[2], "w");
-
-    if (infile == NULL) {
-        DEBUG_PRINT((stderr, "bad infile\n"));
-        return -1;
-    }
-
-    if (outfile == NULL) {
-        DEBUG_PRINT((stderr, "bad outfile\n"));
-        return -1;
-    }
-
-
     /* process blocks */
-    notdone = 1;
-    while (notdone)
-        notdone = expand(infile, outfile);
-
-    fclose(infile);
-    fclose(outfile);
+    do {
+        notdone = expand(stdin, stdout);
+    } while (notdone);
 
     return 0;
 }

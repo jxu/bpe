@@ -1,7 +1,7 @@
-/* Byte Pair Encoding compression
-   Based on idea and code from Philip Gage
+/*  Byte Pair Encoding compression
+    Based on idea and code from Philip Gage
 
-   Pseudocode:
+    Pseudocode:
 
     While not end of file
        Read next block of data into buffer and
@@ -18,6 +18,11 @@
        Write pair table and packed data
 
     End while
+
+    Compile: 
+      gcc -O3 -std=c89 -pedantic -Wall -Wextra -DDEBUG -o compress compress.c
+    Usage: 
+      ./compress < test/sample.txt > test/sample.bpe 2> test/compress.log
 */
 #include <stdio.h>
 #include <assert.h>
@@ -276,40 +281,15 @@ void writeblock(FILE* outfile)
 
 }
 
-
-
-int main(int argc, char* argv[])
+int main(void)
 {
     int notdone;
-    FILE* infile, * outfile;
-
-    if (argc != 3) {
-        DEBUG_PRINT((stderr, "Usage: compress infile outfile\n"));
-        return -1;
-    }
-
-    infile  = fopen(argv[1], "r");
-    outfile = fopen(argv[2], "w");
-
-    if (infile == NULL) {
-        DEBUG_PRINT((stderr, "bad infile\n"));
-        return -1;
-    }
-
-    if (outfile == NULL) {
-        DEBUG_PRINT((stderr, "bad outfile\n"));
-        return -1;
-    }
-
-    notdone = 1;
-    while (notdone) {
-        notdone = readblock(infile);
+    /* process blocks */
+    do {
+        notdone = readblock(stdin);
         compress();
-        writeblock(outfile);
-    }
-
-    fclose(infile);
-    fclose(outfile);
+        writeblock(stdout);
+    } while (notdone);
 
     return 0;
 }
