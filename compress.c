@@ -31,6 +31,8 @@
 #define BLOCKSIZE 5000 /* Maximum block size */
 #define MAXCHARS   200 /* Charset per block (leave some unused) */
 #define MINPAIRS     3 /* Min pairs needed for compress */
+#define MAXPASS    200 /* Max number of passes per block */
+#define HASHSIZE  4093 /* Hash table size (should be large prime) */
 
 #ifdef DEBUG
 /* C99: DEBUG_PRINT(...) fprintf(stderr, __VA_ARGS__) */
@@ -42,20 +44,39 @@
 typedef unsigned char uchar;
 
 /* file-wide globals per-block */
-uchar buffer[BLOCKSIZE];
-uchar left[UCHAR_MAX+1], right[UCHAR_MAX+1]; /* pair table */
-uchar count[UCHAR_MAX+1][UCHAR_MAX+1];       /* pair counts */
+uchar buf[BLOCKSIZE];
+uchar lpair[UCHAR_MAX+1], rpair[UCHAR_MAX+1]; /* pair table */
+uchar count[UCHAR_MAX+1][UCHAR_MAX+1];       /* (approx) pair counts */
 unsigned short size;
 
 void print_buffer() 
 {
     int i;
-    DEBUG_PRINT((stderr, "buffer[%d]:\n", size));
+    DEBUG_PRINT((stderr, "buf[%d]:\n", size));
     for (i = 0; i < size; ++i) {
-        DEBUG_PRINT((stderr, "%02x ", buffer[i]));
+        DEBUG_PRINT((stderr, "%02x ", buf[i]));
         if (i % 16 == 7)  DEBUG_PRINT((stderr, " "));
         if (i % 16 == 15) DEBUG_PRINT((stderr, "\n"));
     }    
+    DEBUG_PRINT((stderr, "\n"));
+}
+
+void print_count() 
+{
+    int i, j, printed = 0;
+    DEBUG_PRINT((stderr, "(non-zero) count table:\n"));
+    for (i = 0; i <= UCHAR_MAX; ++i)
+        for (j = 0; j <= UCHAR_MAX; ++j) {            
+            if (count[i][j]) {
+                DEBUG_PRINT((stderr, "%02x%02x:%02x\t", i, j, count[i][j]));
+                ++printed;
+                if (printed % 8 == 0) {
+                    DEBUG_PRINT((stderr, "\n"));
+                }
+            }
+
+        }
+
     DEBUG_PRINT((stderr, "\n"));
 }
 
@@ -73,8 +94,8 @@ int readblock(FILE* infile)
         for (j = 0; j <= UCHAR_MAX; ++j)
             count[i][j] = 0;
 
-        left[i] = i;
-        right[i] = 0;
+        lpair[i] = i;
+        rpair[i] = 0;
     }
 
     size = 0; /* block size */
@@ -87,50 +108,41 @@ int readblock(FILE* infile)
         if (c == EOF) break;
 
         if (size > 0) {
-            uchar lastc = buffer[size - 1];
-            /* count pairs without overflow */
-            if (count[lastc][c] < UCHAR_MAX)
-                ++count[lastc][c];
+            uchar lastc = buf[size - 1];
+            if (count[lastc][c] < UCHAR_MAX) ++count[lastc][c];
         }
 
         /* increase used count if new, mark in pair table as used */
-        if (right[c] == 0) {
-            right[c] = 1;
+        if (rpair[c] == 0) {
+            rpair[c] = 1;
             ++used;
         }
 
-        buffer[size++] = c;  /* push c to buffer */
+        buf[size++] = c;  /* push c to buf */
     }
 
     DEBUG_PRINT((stderr, "size: %d used: %d\n", size, used));
 
     print_buffer();
-    
-    DEBUG_PRINT((stderr, "(non-zero) count table:\n"));
-    for (i = 0; i <= UCHAR_MAX; ++i)
-        for (j = 0; j <= UCHAR_MAX; ++j)
-            if (count[i][j])
-                DEBUG_PRINT((stderr, "%02x%02x:%02x\t", i, j, count[i][j]));
-
+    print_count();
     DEBUG_PRINT((stderr, "\n"));
     
-
     return (c != EOF);
 }
 
 /* for block, write pair and packed data */
 void compress()
 {
-    int pass, i, j, y;
+    int pass, i, j, newc;
 
     DEBUG_PRINT((stderr, "*** COMPRESS BLOCK ***\n"));
 
     /* while compression possible:
        pick pairs until no unused bytes or no good pairs */
-    for (pass = 1; ; ++pass) {
+    for (pass = 1; pass <= MAXPASS; ++pass) {
         int r = 0, w = 0; /* read and write index */
         uchar bestcount = 0;
-        uchar bestleft = 0, bestright = 0;
+        uchar bestl = 0, bestr = 0;
 
         DEBUG_PRINT((stderr, "COMPRESSION PASS %d\n", pass));
 
@@ -139,78 +151,99 @@ void compress()
                 /* record best pair and count */
                 if (count[i][j] > bestcount) {
                     bestcount = count[i][j];
-                    bestleft = i;
-                    bestright = j;
+                    bestl = i;
+                    bestr = j;
                 }
             }
         }
 
         
         DEBUG_PRINT((stderr, "best pair %02x%02x:%d\n", 
-                     bestleft, bestright, bestcount));
+                     bestl, bestr, bestcount));
 
         if (bestcount < MINPAIRS)
             break;
 
 
         /* find unused byte to use */
-        for (y = UCHAR_MAX; y >= 0; --y)
-            if (left[y] == y && right[y] == 0)
+        for (newc = UCHAR_MAX; newc >= 0; --newc)
+            if (lpair[newc] == newc && rpair[newc] == 0)
                 break;
 
-        if (y < 0) break;  /* no more unused */
+        if (newc < 0) break;  /* no more unused */
 
-        DEBUG_PRINT((stderr, "unused byte: %02x\n", y));
+        DEBUG_PRINT((stderr, "unused byte: %02x\n", newc));
 
 
-        /* replace pairs with unused byte in-place in buffer */
+        /* Replace pairs with unused byte in-place in buffer. 
+           Always r >= w so always read original before write */
         while (r < size) {
+            fprintf(stderr, "r %d w %d\n", r, w);
+
             /* match best pair */
             if (r + 1 < size &&
-                    buffer[r] == bestleft && buffer[r + 1] == bestright) {
-                buffer[w++] = y; /* write new byte */
+                    buf[r] == bestl && buf[r + 1] == bestr) {
+
+                /* update count based on removing this pair */
+                if (count[bestl][bestr] > 0) --count[bestl][bestr];
+
+                /* decrease count of old after-pair 
+                   (not including end-of-block) */
+                if (w+1 < size && count[buf[w]][buf[w+1]] > 0) {
+                    --count[buf[w]][buf[w+1]];
+                    fprintf(stderr, "-1 %02x%02x\n", buf[w], buf[w+1]);
+                }
+
+                /* decrease count of old before-pair */
+                if (w-1 >= 0 && count[buf[w-1]][buf[w]] > 0) {
+                    --count[buf[w-1]][buf[w]];
+                    fprintf(stderr, "-2 %02x%02x\n", buf[w-1], buf[w]);                    
+                }
+
+                /* increase count of new after-pair */
+                if (w+1 < size && count[newc][buf[w+1]] < UCHAR_MAX) {
+                    ++count[newc][buf[w+1]];
+                    fprintf(stderr, "+1 %02x%02x\n", newc, buf[w+1]);
+                }
+                
+                /* increase count of new before-pair */
+                if (w-1 >= 0 && count[buf[w-1]][newc] < UCHAR_MAX) {
+                    ++count[buf[w-1]][newc];
+                    fprintf(stderr, "+2 %02x%02x\n", buf[w-1], newc);
+                }
+
+                buf[w++] = newc; /* write new byte */
                 r += 2; /* move read index past pair */
             } else {
-                /* copy buffer[r] to buffer[w], increment indexes */
-                buffer[w++] = buffer[r++];
+                /* copy buf[r] to buf[w], increment indexes */
+                buf[w++] = buf[r++];
             }
         }
 
-        size = w; /* adjust written buffer size */
+        size = w; /* adjust written buf size */
 
-        /* TODO: update counts during writing instead */
-        /* recreate count table */
-
-        for (i = 0; i <= UCHAR_MAX; ++i)
-            for (j = 0; j <= UCHAR_MAX; ++j)
-                count[i][j] = 0;
-
-        for (i = 0; i < size; ++i) {
-            if (i + 1 < size) {
-                uchar c = buffer[i];
-                uchar d = buffer[i + 1];
-
-                if (count[c][d] < UCHAR_MAX)
-                    ++count[c][d];
-            }
-        }
 
         /* add  pair in pair table */
-        left[y] = bestleft;
-        right[y] = bestright;
+        lpair[newc] = bestl;
+        rpair[newc] = bestr;
 
         print_buffer();
+
+        print_count();
  
         DEBUG_PRINT((stderr, "used pair table:\n"));
 
         for (i = 0; i <= UCHAR_MAX; ++i) {
-            if (i != left[i])
-                DEBUG_PRINT((stderr, "%02x:%02x%02x\n", i, left[i], right[i]));
+            if (i != lpair[i])
+                DEBUG_PRINT((stderr, "%02x:%02x%02x\n", i, lpair[i], rpair[i]));
         }
         DEBUG_PRINT((stderr, "\n"));
         
     }
 
+    if (pass == MAXPASS) {
+        DEBUG_PRINT((stderr, "MAXPASS reached!"));
+    }
     DEBUG_PRINT((stderr, "\n"));
 }
 
@@ -226,29 +259,29 @@ void writeblock(FILE* outfile)
         DEBUG_PRINT((stderr, "c: %02x\t", c));
 
         /* run of non-pairs */
-        if (c == left[c]) {
-            while (c == left[c] && c <= UCHAR_MAX && count > CHAR_MIN) {
+        if (c == lpair[c]) {
+            while (c == lpair[c] && c <= UCHAR_MAX && count > CHAR_MIN) {
                 ++c;
                 --count;
             }
             /* output count as negative byte */
             assert(count < 0);
             putc(count, outfile);
-            DEBUG_PRINT((stderr, "count:%d\t", count));
+            DEBUG_PRINT((stderr, "count:%d\n", count));
 
             /* output single pair if not end of table */
             if (c <= UCHAR_MAX) {
-                putc(left[c], outfile);
-                putc(right[c], outfile);
+                putc(lpair[c], outfile);
+                putc(rpair[c], outfile);
                 DEBUG_PRINT((stderr, "single pair %02x%02x\n", 
-                             left[c], right[c]));
+                             lpair[c], rpair[c]));
                 ++c;
             }
 
         } else {
             /* run of pairs */
             int b = c; /* index of start of run */
-            while (c != left[c] && c <= UCHAR_MAX && count < CHAR_MAX) {
+            while (c != lpair[c] && c <= UCHAR_MAX && count < CHAR_MAX) {
                 ++c;
                 ++count;
             }
@@ -259,25 +292,25 @@ void writeblock(FILE* outfile)
             DEBUG_PRINT((stderr, "count:%d\n", count));
 
             for (; b < c; ++b) {
-                putc(left[b], outfile);
-                putc(right[b], outfile);
-                DEBUG_PRINT((stderr, "%02x%02x\n", left[b], right[b]));
+                putc(lpair[b], outfile);
+                putc(rpair[b], outfile);
+                DEBUG_PRINT((stderr, "%02x%02x\n", lpair[b], rpair[b]));
             }
 
 
         }
     }
 
-    /* write compressed buffer size */
+    /* write compressed buf size */
     putc(size >> 8, outfile);
     putc(size & 0xFF, outfile);
 
     DEBUG_PRINT((stderr, "compressed size: %d (%04x)\n", size, size));
 
 
-    /* write compressed buffer */
-    fwrite(buffer, 1, size, outfile);
-    DEBUG_PRINT((stderr, "write buffer(%d)\n", size));
+    /* write compressed buf */
+    fwrite(buf, 1, size, outfile);
+    DEBUG_PRINT((stderr, "write buf(%d)\n", size));
 
 }
 
