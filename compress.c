@@ -4,20 +4,20 @@
 
     Pseudocode:
 
-    While not end of file
-       Read next block of data into buffer and enter all pairs in hash table
-       While compression possible (unused bytes)
-          Find most frequent byte pair, break if not frequent enough
-          Replace pair with an unused byte
-          Add pair to pair table
-       End while
-       Write pair table and packed data
-    End while
+    For each block:
+        Read next block of data into buffer until no more unused bytes 
+        For each pass:
+            Count unused bytes and frequent pair
+            If no unused byte or no frequent pair, break 
+            Replace pair with an unused byte
+            Add pair to pair table
+
+        Write pair table and packed data
 
     Compile: 
-      gcc -O3 -std=c89 -pedantic -Wall -Wextra -DDEBUG -o compress compress.c
+        gcc -O3 -std=c89 -pedantic -Wall -Wextra -DDEBUG -o compress compress.c
     Usage: 
-      ./compress < test/sample.txt > test/sample.bpe 2> test/compress.log
+        ./compress < test/sample.txt > test/sample.bpe 2> test/compress.log
 */
 #include <stdio.h>
 #include <assert.h>
@@ -68,16 +68,13 @@ void print_count()
 /* return true if not done reading file */
 int readblock(FILE* infile)
 {
-    int i, j, c;
+    int i, c;
     int used = 0;
 
     DEBUG_PRINT((stderr, "*** READ BLOCK ***\n"));
 
-    /* reset counts and pair table */
+    /* reset pair table */
     for (i = 0; i <= UCHAR_MAX; ++i) {
-        for (j = 0; j <= UCHAR_MAX; ++j)
-            count[i][j] = 0;
-
         lpair[i] = i;
         rpair[i] = 0;
     }
@@ -91,14 +88,7 @@ int readblock(FILE* infile)
         c = getc(infile);
         if (c == EOF) break;
 
-        if (size > 0) {
-            uchar lastc = buffer[size - 1];
-            /* count pairs without overflow */
-            if (count[lastc][c] < UCHAR_MAX)
-                ++count[lastc][c];
-        }
-
-        /* increase used count if new, mark in pair table as used */
+        /* if unused, mark byte as used and increase used count */
         if (rpair[c] == 0) {
             rpair[c] = 1;
             ++used;
@@ -109,7 +99,6 @@ int readblock(FILE* infile)
 
     DEBUG_PRINT((stderr, "size: %d used: %d\n", size, used));
     print_buffer();
-    print_count();
     DEBUG_PRINT((stderr, "\n"));
     
     return (c != EOF);
@@ -131,28 +120,30 @@ void compress()
 
         DEBUG_PRINT((stderr, "COMPRESSION PASS %d\n", pass));
 
+        /* clear count table */
+        for (i = 0; i <= UCHAR_MAX; ++i)
+            for (j = 0; j <= UCHAR_MAX; ++j)
+                count[i][j] = 0;
 
-
-        for (i = 0; i <= UCHAR_MAX; ++i) {
-            for (j = 0; j <= UCHAR_MAX; ++j) {
-                /* record best pair and count */
-                if (count[i][j] > bestcount) {
-                    bestcount = count[i][j];
-                    bestl = i;
-                    bestr = j;
+        /* recreate count table, tracking best pair and count */
+        for (i = 0; i+1 < size; ++i) {
+            uchar a = buffer[i], b = buffer[i+1];
+            if (count[a][b] < UCHAR_MAX) {
+                ++count[a][b];
+                if (count[a][b] > bestcount) {
+                    bestcount = count[a][b];
+                    bestl = a; bestr = b;
                 }
             }
-        }
-
+        }        
         
-        DEBUG_PRINT((stderr, "best pair %02x%02x:%d\n", 
+        DEBUG_PRINT((stderr, "best pair %02x%02x:%02x\n", 
                      bestl, bestr, bestcount));
 
         if (bestcount < MINPAIRS)
             break;
 
-
-        /* find unused byte to use */
+        /* find unused byte to use from end */
         for (unused = UCHAR_MAX; unused >= 0; --unused)
             if (lpair[unused] == unused && rpair[unused] == 0)
                 break;
@@ -165,34 +156,17 @@ void compress()
         /* replace pairs with unused byte in-place in buffer */
         while (r < size) {
             /* match best pair */
-            if (r + 1 < size &&
-                    buffer[r] == bestl && buffer[r + 1] == bestr) {
+            if (r+1 < size && buffer[r] == bestl && buffer[r+1] == bestr) {
                 buffer[w++] = unused; /* write new byte */
                 r += 2; /* move read index past pair */
             } else {
-                /* copy buffer[r] to buffer[w], increment indexes */
+                /* copy buffer[r] to earlier buffer[w], increment indexes */
                 buffer[w++] = buffer[r++];
             }
         }
 
         size = w; /* adjust written buffer size */
 
-        /* TODO: update counts during writing instead */
-        /* recreate count table */
-
-        for (i = 0; i <= UCHAR_MAX; ++i)
-            for (j = 0; j <= UCHAR_MAX; ++j)
-                count[i][j] = 0;
-
-        for (i = 0; i < size; ++i) {
-            if (i + 1 < size) {
-                uchar c = buffer[i];
-                uchar d = buffer[i + 1];
-
-                if (count[c][d] < UCHAR_MAX)
-                    ++count[c][d];
-            }
-        }
 
         /* add  pair in pair table */
         lpair[unused] = bestl;
