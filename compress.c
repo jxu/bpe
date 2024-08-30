@@ -9,16 +9,10 @@
         For each pass:
             Count unused bytes and frequent pair
             If no unused byte or no frequent pair, break 
-            Count pairs in a hash table 
-            Replace most frequent pair with an unused byte
+            Replace pair with an unused byte
             Add pair to pair table
 
         Write pair table and packed data
-
-    The hash table actually makes the code twice as slow as simply storing
-    all possible pairs with count[256][256], probably all those hash table ops!
-    but I'm keeping it because it's interesting and in the original 
-    implementation to save memory.
 
     Compile: 
         gcc -O3 -std=c89 -pedantic -Wall -Wextra -DDEBUG -o compress compress.c
@@ -29,10 +23,9 @@
 #include <assert.h>
 #include <limits.h>
 
-#define BLOCKSIZE 4096 /* Maximum block size and hash size, power of 2 */
+#define BLOCKSIZE 5000 /* Maximum block size */
 #define MAXCHARS   200 /* Charset per block (leave some unused) */
 #define MINPAIRS     3 /* Min pairs needed for compress */
-#define MAXPASSES  200 /* Max passes per block */
 
 #ifdef DEBUG
 /* C99: DEBUG_PRINT(...) fprintf(stderr, __VA_ARGS__) */
@@ -44,13 +37,10 @@
 typedef unsigned char uchar;
 
 /* file-wide globals per-block */
-uchar buffer[BLOCKSIZE];   /* block buffer */
-uchar  lpair[UCHAR_MAX+1]; /* pair table */
-uchar  rpair[UCHAR_MAX+1]; /* pair table */
-uchar  count[BLOCKSIZE];   /* (approx) pair counts as hash table */
-uchar   lkey[BLOCKSIZE];   /* left byte key in hash table */ 
-uchar   rkey[BLOCKSIZE];   /* right byte key in hash table */ 
-unsigned short size;       /* buffer size */
+uchar buffer[BLOCKSIZE];
+uchar lpair[UCHAR_MAX+1], rpair[UCHAR_MAX+1]; /* pair table */
+uchar count[UCHAR_MAX+1][UCHAR_MAX+1];       /* pair counts */
+unsigned short size;
 
 void print_buffer() 
 {
@@ -66,47 +56,12 @@ void print_buffer()
 
 void print_count()
 {
-    int i;
+    int i, j;
     DEBUG_PRINT((stderr, "(non-zero) count table:\n"));
-    for (i = 0; i < BLOCKSIZE; ++i) {
-        if (count[i])
-            DEBUG_PRINT((stderr, "[%03x] %02x%02x:%02x\n", 
-                        i, lkey[i], rkey[i], count[i]));
-    }
-}
-
-/* simple hash function */
-unsigned int hash(uchar l, uchar r) 
-{
-    return (33*l + r) % BLOCKSIZE; /* should be power of 2 */
-}
-
-
-/* linear probing for pair (l,r)
-   search linearly for either new empty slot or matching key in slot
- */
-unsigned int lookup(uchar l, uchar r)
-{
-    unsigned int i = hash(l, r); 
-
-    DEBUG_PRINT((stderr, "Looking up %02x%02x... ", l, r));
-    
-    while (1) {
-        /* new empty slot, indicated by count 0 */
-        if (count[i] == 0) {
-            DEBUG_PRINT((stderr, "[%03x] new\n", i));
-            lkey[i] = l; rkey[i] = r;
-            return i;
-        }
-
-        /* existing entry in slot, indicated by count > 0 and matching key */
-        if (count[i] > 0 && lkey[i] == l && rkey[i] == r) {
-            DEBUG_PRINT((stderr, "[%03x] %02x\n", i, count[i]));
-            return i;
-        }
-        i = (i + 1) % BLOCKSIZE; 
-    }
-
+    for (i = 0; i <= UCHAR_MAX; ++i)
+        for (j = 0; j <= UCHAR_MAX; ++j)
+            if (count[i][j])
+                DEBUG_PRINT((stderr, "%02x%02x:%02x\t", i, j, count[i][j]));
 }
 
 /* read block from file into pair count */
@@ -152,13 +107,13 @@ int readblock(FILE* infile)
 /* for block, write pair and packed data */
 void compress()
 {
-    int pass, i, unused;
+    int pass, i, j, unused;
 
     DEBUG_PRINT((stderr, "*** COMPRESS BLOCK ***\n"));
 
     /* while compression possible:
        pick pairs until no unused bytes or no good pairs */
-    for (pass = 1; pass <= MAXPASSES; ++pass) {
+    for (pass = 1; ; ++pass) {
         int r = 0, w = 0; /* read and write index */
         uchar bestcount = 0;
         uchar bestl = 0, bestr = 0;
@@ -166,24 +121,21 @@ void compress()
         DEBUG_PRINT((stderr, "COMPRESSION PASS %d\n", pass));
 
         /* clear count table */
-        for (i = 0; i < BLOCKSIZE; ++i)
-            count[i] = 0;
+        for (i = 0; i <= UCHAR_MAX; ++i)
+            for (j = 0; j <= UCHAR_MAX; ++j)
+                count[i][j] = 0;
 
         /* recreate count table, tracking best pair and count */
         for (i = 0; i+1 < size; ++i) {
             uchar a = buffer[i], b = buffer[i+1];
-            unsigned int j = lookup(a, b);
-            
-            if (count[j] < UCHAR_MAX) {
-                ++count[j];
-                if (count[j] > bestcount) {
-                    bestcount = count[j];
+            if (count[a][b] < UCHAR_MAX) {
+                ++count[a][b];
+                if (count[a][b] > bestcount) {
+                    bestcount = count[a][b];
                     bestl = a; bestr = b;
                 }
             }
         }        
-
-        print_count();
         
         DEBUG_PRINT((stderr, "best pair %02x%02x:%02x\n", 
                      bestl, bestr, bestcount));
