@@ -1,23 +1,22 @@
-/*  Byte Pair Encoding compression
-    Based on idea and code from Philip Gage
-    http://www.pennelynn.com/Documents/CUJ/HTML/94HTML/19940045.HTM
+/* Byte Pair Encoding (BPE) Compression
+   Based on idea and code from Philip Gage
+   http://www.pennelynn.com/Documents/CUJ/HTML/94HTML/19940045.HTM
 
-    Pseudocode:
+   Pseudocode
+   For each block:
+       Read block of data into buffer, until max size or no more unused bytes 
+       For each compression pass:
+           Count unused bytes and most frequent pair
+           Break if no unused bytes or no frequent enough pair
+           Replace pair with an unused byte (in single buffer)
+           Add pair to pair table
 
-    For each block:
-        Read next block of data into buffer until no more unused bytes 
-        For each pass:
-            Count unused bytes and frequent pair
-            If no unused byte or no frequent pair, break 
-            Replace pair with an unused byte
-            Add pair to pair table
+       Write pair table and packed data
 
-        Write pair table and packed data
-
-    Compile: 
-        gcc -O3 -std=c89 -pedantic -Wall -Wextra -DDEBUG -o compress compress.c
-    Usage: 
-        ./compress < test/sample.txt > test/sample.bpe 2> test/compress.log
+   Compile (with DEBUG): 
+       gcc -O3 -std=c89 -pedantic -Wall -Wextra -DDEBUG -o compress compress.c
+   Usage: 
+       ./compress < test/sample.txt > test/sample.bpe 2> test/compress.log
 */
 #include <stdio.h>
 #include <assert.h>
@@ -31,16 +30,17 @@
 /* C99: DEBUG_PRINT(...) fprintf(stderr, __VA_ARGS__) */
     #define DEBUG_PRINT(x) fprintf x 
 #else
-    #define DEBUG_PRINT(x) do {} while (0)
+    #define DEBUG_PRINT(x) (void)0  /* suppress GCC warning */
 #endif
 
 typedef unsigned char uchar;
 
 /* file-wide globals per-block */
 uchar buffer[BLOCKSIZE];
-uchar lpair[UCHAR_MAX+1], rpair[UCHAR_MAX+1]; /* pair table */
-uchar count[UCHAR_MAX+1][UCHAR_MAX+1];       /* pair counts */
-unsigned short size;
+uchar lpair[UCHAR_MAX+1];               /* left pair table*/
+uchar rpair[UCHAR_MAX+1];               /* right pair table */
+uchar count[UCHAR_MAX+1][UCHAR_MAX+1];  /* pair counts */
+unsigned short size;                    /* block size (short to test 16-bit) */
 
 void print_buffer() 
 {
@@ -64,6 +64,18 @@ void print_count()
                 DEBUG_PRINT((stderr, "%02x%02x:%02x\t", i, j, count[i][j]));
 }
 
+/* print unused pairs in pair table */
+void print_pairs() 
+{
+    int i;
+    DEBUG_PRINT((stderr, "used pair table:\n"));
+
+    for (i = 0; i <= UCHAR_MAX; ++i) {
+        if (i != lpair[i])
+            DEBUG_PRINT((stderr, "%02x:%02x%02x\n", i, lpair[i], rpair[i]));
+    }    
+}
+
 /* read block from file into pair count */
 /* return true if not done reading file */
 int readblock(FILE* infile)
@@ -84,7 +96,7 @@ int readblock(FILE* infile)
     /* C I/O, get one char at a time */
     /* stopping at EOF, BLOCKSIZE limit, or MAXCHARS limit */
     while (size < BLOCKSIZE && used < MAXCHARS) {
-        /* only read now instead of in while condition */
+        /* only read now instead of in while condition to avoid over-reading */
         c = getc(infile);
         if (c == EOF) break;
 
@@ -148,8 +160,11 @@ void compress()
             if (lpair[unused] == unused && rpair[unused] == 0)
                 break;
 
-        if (unused < 0) break;  /* no more unused */
-
+        if (unused < 0) {
+            DEBUG_PRINT((stderr, "no more unused bytes\n"));
+            break; 
+        }
+        
         DEBUG_PRINT((stderr, "unused byte: %02x\n", unused));
 
 
@@ -173,15 +188,9 @@ void compress()
         rpair[unused] = bestr;
 
         print_buffer();
- 
-        DEBUG_PRINT((stderr, "used pair table:\n"));
-
-        for (i = 0; i <= UCHAR_MAX; ++i) {
-            if (i != lpair[i])
-                DEBUG_PRINT((stderr, "%02x:%02x%02x\n", i, lpair[i], rpair[i]));
-        }
-        DEBUG_PRINT((stderr, "\n"));
+        print_pairs();
         
+        DEBUG_PRINT((stderr, "\n"));
     }
 
     DEBUG_PRINT((stderr, "\n"));
@@ -196,7 +205,7 @@ void writeblock(FILE* outfile)
 
     while (c <= UCHAR_MAX) {
         signed char count = 0;
-        DEBUG_PRINT((stderr, "c: %02x\t", c));
+        DEBUG_PRINT((stderr, "c=%02x ", c));
 
         /* run of non-pairs */
         if (c == lpair[c]) {
@@ -207,7 +216,7 @@ void writeblock(FILE* outfile)
             /* output count as negative byte */
             assert(count < 0);
             putc(count, outfile);
-            DEBUG_PRINT((stderr, "count:%d\t", count));
+            DEBUG_PRINT((stderr, "count:%d\n", count));
 
             /* output single pair if not end of table */
             if (c <= UCHAR_MAX) {
@@ -250,7 +259,7 @@ void writeblock(FILE* outfile)
 
     /* write compressed buffer */
     fwrite(buffer, 1, size, outfile);
-    DEBUG_PRINT((stderr, "write buffer(%d)\n", size));
+    DEBUG_PRINT((stderr, "write buffer(%d)\n\n", size));
 
 }
 
