@@ -46,6 +46,24 @@ unsigned char safe_getc(FILE* infile, char errmsg[])
     return (unsigned char)c; 
 }
 
+/* sanity check pair */
+void check_pair(unsigned char b)
+{
+    /* not replaced pair should look like ff: ff 00 or ff 01 */
+    if (b == lpair[b]) {            
+        if (rpair[b] > 1) {
+            fprintf(stderr, "Invalid not replaced pair\n");
+            exit(EXIT_FAILURE);
+        }
+    /* replaced pair should look like ff: ee dd */
+    } else {
+        if (b == lpair[b] || b == rpair[b]) {
+            fprintf(stderr, "Invalid replaced pair\n");
+            exit(EXIT_FAILURE);
+        }
+    }
+}
+
 /* expand block */
 /* return true if there are more blocks (doesn't end in EOF) */
 int expand(FILE* infile, FILE* outfile)
@@ -55,6 +73,8 @@ int expand(FILE* infile, FILE* outfile)
     unsigned char usize, lsize;
     unsigned short size;
     unsigned b = 0;
+
+    DEBUG_PRINT((stderr, "***** BEGIN BLOCK *****\n"));
 
     /* reset pair table to defaults */
     for (i = 0; i <= UCHAR_MAX; ++i) {
@@ -88,6 +108,7 @@ int expand(FILE* infile, FILE* outfile)
                 rpair[b] = safe_getc(infile, "Missing right byte");
                 DEBUG_PRINT((stderr, "Read single pair %02x%02x\n", 
                              lpair[b], rpair[b]));
+                check_pair(b);
                 ++b;
             }
         }
@@ -99,6 +120,7 @@ int expand(FILE* infile, FILE* outfile)
                 rpair[b] = safe_getc(infile, "Missing right byte");
                 DEBUG_PRINT((stderr, "Read pair %02x%02x\n", 
                              lpair[b], rpair[b]));
+                check_pair(b);
             }
         }
     }
@@ -110,10 +132,13 @@ int expand(FILE* infile, FILE* outfile)
 
 
     DEBUG_PRINT((stderr, "Pair table:\n"));
+
     for (b = 0; b <= UCHAR_MAX; ++b) {
-        DEBUG_PRINT((stderr, "%02x:%02x%02x\t", b, lpair[b], rpair[b]));
+        DEBUG_PRINT((stderr, "%02x:%02x%02x ", b, lpair[b], rpair[b]));
+        if (b % 8 == 7) DEBUG_PRINT((stderr, "\n"));
     }
     DEBUG_PRINT((stderr, "\n"));
+
     
     /* read compressed buffer size */
     usize = safe_getc(infile, "missing size bytes");
