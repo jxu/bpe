@@ -5,10 +5,11 @@
 
    Pseudocode 
    While not end of file
-      Read pair table from input
+      Read pair table from input, checking pairs
+      Check pair table for ciruclar expansion
       While more data in block
          If stack empty, read byte from input
-         Else pop byte from stack, unmarking seen
+         Else pop byte from stack
          If byte in table, push pair on stack, marking/checking seen
          Else write byte to output
       End while
@@ -66,6 +67,22 @@ void check_pair(unsigned char b)
             exit(EXIT_FAILURE);
         }
     }
+}
+
+void recurse_byte(unsigned char c)
+{
+    DEBUG_PRINT((stderr, "Recurse %02x\n", c));
+    if (c == lpair[c]) { /* not replaced pair */
+        return;
+    }
+    if (seen[c]) { /* input should be not seen before */
+        fprintf(stderr, "Recursive byte expansion detected!\n");
+        exit(EXIT_FAILURE);
+    }
+    seen[c] = 1; /* mark seen */
+    recurse_byte(lpair[c]);
+    recurse_byte(rpair[c]);
+    seen[c] = 0; /* unmark seen for other searches */
 }
 
 /* expand block */
@@ -143,6 +160,14 @@ int expand(FILE* infile, FILE* outfile)
     }
     DEBUG_PRINT((stderr, "\n"));
 
+    /* check pair table for circular expansion */
+    for (i = 0; i <= UCHAR_MAX; ++i)
+        seen[i] = 0;
+
+    for (i = 0; i <= UCHAR_MAX; ++i) {
+        recurse_byte(i);
+    }
+
     
     /* read compressed buffer size */
     usize = safe_getc(infile, "missing size bytes");
@@ -151,9 +176,6 @@ int expand(FILE* infile, FILE* outfile)
 
     DEBUG_PRINT((stderr, "size: %d(%02x%02x)\n", size, usize, lsize));
 
-    /* clear seen array */
-    for (i = 0; i <= UCHAR_MAX; ++i)
-        seen[i] = 0;
 
     /* write output, pushing pairs to stack */
     i = 0;
@@ -165,24 +187,15 @@ int expand(FILE* infile, FILE* outfile)
             ++i;
         } else {
             c = stack[--sp]; /* pop byte */
-            DEBUG_PRINT((stderr, "pop byte: %02x\n", c));
-
-            seen[c] = 0; /* unmark seen */
+            DEBUG_PRINT((stderr, "sp=%d pop byte %02x\n", sp, c));
         }
 
         if (c != lpair[c]) { /* pair in table */
             /* push pair */
             stack[sp++] = rpair[c];
             stack[sp++] = lpair[c];
-            DEBUG_PRINT((stderr, "push pair %02x%02x\n", lpair[c], rpair[c]));
-
-            /* check new pair bytes have been seen */
-            if (seen[rpair[c]] || seen[lpair[c]]) {
-                fprintf(stderr, "Circular byte expansion found!\n");
-                exit(EXIT_FAILURE);
-            }
-            /* mark new pair bytes as seen */
-            seen[rpair[c]] = 1; seen[lpair[c]] = 1;
+            DEBUG_PRINT((stderr, "sp=%d push pair %02x%02x\n", 
+                         sp, lpair[c], rpair[c]));
             
         } else { 
             /* pair not in table */
