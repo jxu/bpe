@@ -1,12 +1,15 @@
 /* expand.c: BPE expand routine
 
-   Pseudocode (unchanged from original)
+   Added some input validation to prevent crashes 
+   Fuzzer found circular expansion issue in pair table
+
+   Pseudocode 
    While not end of file
       Read pair table from input
       While more data in block
          If stack empty, read byte from input
-         Else pop byte from stack
-         If byte in table, push pair on stack
+         Else pop byte from stack, unmarking seen
+         If byte in table, push pair on stack, marking/checking seen
          Else write byte to output
       End while
 
@@ -34,6 +37,7 @@
 unsigned char lpair[UCHAR_MAX+1];
 unsigned char rpair[UCHAR_MAX+1];
 unsigned char stack[UCHAR_MAX]; /* only needs to be num unused bytes deep */
+unsigned char  seen[UCHAR_MAX+1]; /* for expansion cycle detection */
 
 /* getc that will exit safely with error message on EOF */
 unsigned char safe_getc(FILE* infile, char errmsg[])
@@ -147,6 +151,10 @@ int expand(FILE* infile, FILE* outfile)
 
     DEBUG_PRINT((stderr, "size: %d(%02x%02x)\n", size, usize, lsize));
 
+    /* clear seen array */
+    for (i = 0; i <= UCHAR_MAX; ++i)
+        seen[i] = 0;
+
     /* write output, pushing pairs to stack */
     i = 0;
     while (i < size || sp) { /* more to read or stack non-empty */
@@ -158,6 +166,8 @@ int expand(FILE* infile, FILE* outfile)
         } else {
             c = stack[--sp]; /* pop byte */
             DEBUG_PRINT((stderr, "pop byte: %02x\n", c));
+
+            seen[c] = 0; /* unmark seen */
         }
 
         if (c != lpair[c]) { /* pair in table */
@@ -165,6 +175,15 @@ int expand(FILE* infile, FILE* outfile)
             stack[sp++] = rpair[c];
             stack[sp++] = lpair[c];
             DEBUG_PRINT((stderr, "push pair %02x%02x\n", lpair[c], rpair[c]));
+
+            /* check new pair bytes have been seen */
+            if (seen[rpair[c]] || seen[lpair[c]]) {
+                fprintf(stderr, "Circular byte expansion found!\n");
+                exit(EXIT_FAILURE);
+            }
+            /* mark new pair bytes as seen */
+            seen[rpair[c]] = 1; seen[lpair[c]] = 1;
+            
         } else { 
             /* pair not in table */
             putc(c, outfile); /* write literal byte */
