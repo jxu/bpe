@@ -69,20 +69,27 @@ void check_pair(unsigned char b)
     }
 }
 
+/* linear time toposort based on DFS */
 void recurse_byte(unsigned char c)
 {
     DEBUG_PRINT((stderr, "Recurse %02x\n", c));
-    if (c == lpair[c]) { /* not replaced pair */
+
+    if (seen[c] == 2)  /* finished (black) */
         return;
-    }
-    if (seen[c]) { /* input should be not seen before */
-        fprintf(stderr, "Recursive byte expansion detected!\n");
+    
+    if (seen[c] == 1) { /* Visiting an already discovered node is a cycle */
+        fprintf(stderr, "Circular byte expansion detected!\n");
         exit(EXIT_FAILURE);
     }
-    seen[c] = 1; /* mark seen */
-    recurse_byte(lpair[c]);
-    recurse_byte(rpair[c]);
-    seen[c] = 0; /* unmark seen for other searches */
+
+    seen[c] = 1; /* mark discovered (gray) */
+
+    if (c != lpair[c]) { /* replaced pair, meaning non-leaf */
+        recurse_byte(lpair[c]);
+        recurse_byte(rpair[c]);
+    }
+    
+    seen[c] = 2; /* done considering all descendants, mark finished */
 }
 
 /* expand block */
@@ -165,7 +172,7 @@ int expand(FILE* infile, FILE* outfile)
         seen[i] = 0;
 
     for (i = 0; i <= UCHAR_MAX; ++i) {
-        recurse_byte(i);
+        if (seen[i] != 2) recurse_byte(i);
     }
 
     
